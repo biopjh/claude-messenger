@@ -1,0 +1,3 @@
+# 빌드 산출물 — git에 올리지 않는다.
+# (build/ 안의 icon.png, icon.ico, electron-builder.yml 같은 소스는 그대로 추적됨)
+dist/

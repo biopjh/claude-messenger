@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.messenger.message.mapper.MessageMapper">
+
+    <resultMap id="MessageResponseMap" type="com.example.messenger.message.dto.MessageResponse">
+        <constructor>
+            <idArg  column="id"                          javaType="java.lang.Long"/>
+            <arg    column="room_id"                     javaType="java.lang.Long"/>
+            <arg    column="sender_id"                   javaType="java.lang.Long"/>
+            <arg    column="sender_nickname"             javaType="java.lang.String"/>
+            <arg    column="sender_profile_image_url"    javaType="java.lang.String"/>
+            <arg    column="type"                        javaType="com.example.messenger.message.domain.MessageType"/>
+            <arg    column="content"                     javaType="java.lang.String"/>
+            <arg    column="created_at"                  javaType="java.time.OffsetDateTime"/>
+            <arg    column="attachment_url"              javaType="java.lang.String"/>
+            <arg    column="attachment_mime_type"        javaType="java.lang.String"/>
+            <arg    column="attachment_size_bytes"       javaType="java.lang.Long"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insert"
+            parameterType="com.example.messenger.message.domain.Message"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO messages (room_id, sender_id, type, content)
+        VALUES (#{roomId}, #{senderId}, #{type}, #{content})
+    </insert>
+
+    <insert id="insertAttachment">
+        INSERT INTO attachments (message_id, url, mime_type, size_bytes)
+        VALUES (#{messageId}, #{url}, #{mimeType}, #{sizeBytes})
+    </insert>
+
+    <select id="findPage" resultMap="MessageResponseMap">
+        SELECT m.id                  AS id,
+               m.room_id             AS room_id,
+               m.sender_id           AS sender_id,
+               u.nickname            AS sender_nickname,
+               u.profile_image_url   AS sender_profile_image_url,
+               m.type                AS type,
+               m.content             AS content,
+               m.created_at          AS created_at,
+               a.url                 AS attachment_url,
+               a.mime_type           AS attachment_mime_type,
+               a.size_bytes          AS attachment_size_bytes
+          FROM messages m
+          LEFT JOIN users u       ON u.id = m.sender_id
+          LEFT JOIN attachments a ON a.message_id = m.id
+         WHERE m.room_id = #{roomId}
+           <if test="cursorId != null">
+               AND m.id <![CDATA[ < ]]> #{cursorId}
+           </if>
+         ORDER BY m.id DESC
+         LIMIT #{size}
+    </select>
+
+</mapper>

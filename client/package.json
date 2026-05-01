@@ -1,0 +1,32 @@
+{
+  "name": "messenger-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PC desktop client for the Messenger project (Electron wrapper)",
+  "author": "biopjh",
+  "main": "src/main/index.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --devtools",
+    "start:1": "electron . --profile=user1",
+    "start:2": "electron . --profile=user2",
+    "lint:syntax": "node --check src/main/index.js && node --check src/main/preload.js",
+    "pack": "electron-builder --dir --config ../installer/electron-builder.yml",
+    "dist": "electron-builder --config ../installer/electron-builder.yml",
+    "dist:mac": "electron-builder --mac --config ../installer/electron-builder.yml",
+    "dist:win": "electron-builder --win --config ../installer/electron-builder.yml",
+    "dist:linux": "electron-builder --linux --config ../installer/electron-builder.yml",
+    "release": "electron-builder --config ../installer/electron-builder.yml --publish always"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "electron-log": "^5.1.4",
+    "electron-updater": "^6.2.1"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  }
+}

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.messenger.friend.mapper.FriendMapper">
+
+    <resultMap id="FriendshipMap" type="com.example.messenger.friend.domain.Friendship">
+        <id     property="id"        column="id"/>
+        <result property="userId"    column="user_id"/>
+        <result property="friendId"  column="friend_id"/>
+        <result property="status"    column="status"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <resultMap id="FriendListItemMap" type="com.example.messenger.friend.dto.FriendListItem">
+        <result property="friendshipId"    column="friendship_id"/>
+        <result property="status"          column="status"/>
+        <result property="userId"          column="user_id"/>
+        <result property="email"           column="email"/>
+        <result property="nickname"        column="nickname"/>
+        <result property="profileImageUrl" column="profile_image_url"/>
+        <result property="statusMessage"   column="status_message"/>
+    </resultMap>
+
+    <select id="findByUserAndFriend" resultMap="FriendshipMap">
+        SELECT * FROM friendships
+         WHERE user_id = #{userId} AND friend_id = #{friendId}
+    </select>
+
+    <select id="findById" resultMap="FriendshipMap">
+        SELECT * FROM friendships WHERE id = #{id}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO friendships (user_id, friend_id, status)
+        VALUES (#{userId}, #{friendId}, #{status})
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE friendships SET status = #{status} WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM friendships WHERE id = #{id}
+    </delete>
+
+    <!--
+      내 친구 목록(상대 user 정보 join). user_id = 내 id 인 행 기준.
+      (요청 수락 시 양방향 두 행을 만들기 때문에 user_id 한쪽만 보면 충분.)
+    -->
+    <select id="listAccepted" resultMap="FriendListItemMap">
+        SELECT f.id          AS friendship_id,
+               f.status      AS status,
+               u.id          AS user_id,
+               u.email       AS email,
+               u.nickname    AS nickname,
+               u.profile_image_url AS profile_image_url,
+               u.status_message    AS status_message
+          FROM friendships f
+          JOIN users u ON u.id = f.friend_id
+         WHERE f.user_id = #{userId}
+           AND f.status  = 'ACCEPTED'
+         ORDER BY u.nickname
+    </select>
+
+    <!-- 내가 받은 PENDING 요청. friend_id = 내 id 이고 보낸 사람(user_id)의 정보 join. -->
+    <select id="listIncomingPending" resultMap="FriendListItemMap">
+        SELECT f.id          AS friendship_id,
+               f.status      AS status,
+               u.id          AS user_id,
+               u.email       AS email,
+               u.nickname    AS nickname,
+               u.profile_image_url AS profile_image_url,
+               u.status_message    AS status_message
+          FROM friendships f
+          JOIN users u ON u.id = f.user_id
+         WHERE f.friend_id = #{userId}
+           AND f.status    = 'PENDING'
+         ORDER BY f.created_at DESC
+    </select>
+
+</mapper>

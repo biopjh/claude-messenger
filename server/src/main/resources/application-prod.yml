@@ -1,0 +1,32 @@
+# 운영 프로파일 — SPRING_PROFILES_ACTIVE=prod 일 때만 활성화.
+# 모든 비밀 값은 환경변수로 주입한다. 디폴트가 없으면 부팅이 실패하는 게 좋은 값들에는
+# 일부러 기본값을 두지 않는다.
+
+spring:
+  datasource:
+    url:      ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:20}
+  thymeleaf:
+    cache: true                 # 운영은 템플릿 캐시 켜기
+
+server:
+  port: ${SERVER_PORT:8080}
+  forward-headers-strategy: framework   # Fly.io / Render proxy 뒷단에서 X-Forwarded-* 인식
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-validity-seconds: ${JWT_ACCESS_TTL:3600}
+  refresh-token-validity-seconds: ${JWT_REFRESH_TTL:1209600}
+
+file:
+  upload-dir: ${FILE_UPLOAD_DIR:/app/var/uploads}
+
+logging:
+  level:
+    root: INFO
+    com.example.messenger: INFO
+    org.springframework.security: WARN
+    org.mybatis: WARN

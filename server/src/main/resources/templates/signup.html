@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>회원가입 · Messenger</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<main class="auth-card">
+  <h1>회원가입</h1>
+  <form id="signupForm">
+    <label>
+      이메일
+      <input type="email" name="email" required>
+    </label>
+    <label>
+      비밀번호 (4자 이상)
+      <input type="password" name="password" minlength="4" required>
+    </label>
+    <label>
+      닉네임 (2~20자)
+      <input type="text" name="nickname" minlength="2" maxlength="20" required>
+    </label>
+    <button type="submit">가입하기</button>
+    <p class="msg" id="msg"></p>
+  </form>
+  <p class="hint">이미 계정이 있나요? <a th:href="@{/login}">로그인</a></p>
+</main>
+
+<script>
+  document.getElementById('signupForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = {
+      email: fd.get('email'),
+      password: fd.get('password'),
+      nickname: fd.get('nickname'),
+    };
+    const res = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    const msg = document.getElementById('msg');
+    if (!json.success) {
+      msg.textContent = json.error?.message || '가입 실패';
+      msg.className = 'msg error';
+      return;
+    }
+    msg.textContent = '가입 완료! 로그인 화면으로 이동합니다…';
+    msg.className = 'msg ok';
+    setTimeout(() => location.href = '/login', 800);
+  });
+</script>
+</body>
+</html>

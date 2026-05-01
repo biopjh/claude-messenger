@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>채팅창 · Messenger</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<main class="chat-shell">
+  <header class="chat-header">
+    <a th:href="@{/home}" class="back-btn">←</a>
+    <div class="chat-header__title">
+      <h2 id="roomTitle">채팅방</h2>
+      <span id="roomMemberCount" class="muted small"></span>
+    </div>
+    <span id="connState" class="conn-state">연결 중…</span>
+    <button id="membersBtn"  class="icon-btn" type="button" title="멤버" aria-label="멤버">👥</button>
+    <button id="inviteBtn"   class="icon-btn hidden" type="button" title="초대">＋</button>
+    <button id="leaveBtn"    class="icon-btn hidden" type="button" title="나가기">⎋</button>
+  </header>
+
+  <section id="messages" class="messages"></section>
+
+  <div id="dropOverlay" class="drop-overlay hidden">파일을 놓으면 전송됩니다</div>
+
+  <div id="uploadStatus" class="upload-status hidden"></div>
+
+  <form id="sendForm" class="send-bar">
+    <input id="fileInput" type="file" hidden>
+    <button type="button" id="attachBtn" class="icon-btn" title="첨부" aria-label="첨부">📎</button>
+    <textarea id="msgInput" rows="1" placeholder="메시지를 입력하세요. (Shift+Enter 줄바꿈)"></textarea>
+    <button type="submit" id="sendBtn">전송</button>
+  </form>
+</main>
+
+<!-- 이미지 라이트박스 -->
+<div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true">
+  <img id="lightboxImg" alt="">
+</div>
+
+<!-- 멤버 패널 (drawer) -->
+<aside id="membersPanel" class="drawer hidden">
+  <div class="drawer__backdrop" data-close-drawer></div>
+  <div class="drawer__panel">
+    <header class="drawer__head">
+      <h3>참여자</h3>
+      <button class="icon-btn" data-close-drawer aria-label="닫기">×</button>
+    </header>
+    <ul id="membersList" class="list"></ul>
+  </div>
+</aside>
+
+<!-- 초대 모달 -->
+<div id="inviteModal" class="modal hidden" aria-hidden="true">
+  <div class="modal__backdrop" data-close></div>
+  <div class="modal__panel">
+    <header class="modal__head">
+      <h3>친구 초대</h3>
+      <button class="icon-btn" data-close aria-label="닫기">×</button>
+    </header>
+    <div class="modal__body">
+      <p class="muted small">아직 이 방에 없는 친구만 표시됩니다.</p>
+      <ul id="inviteFriendList" class="list checklist"></ul>
+      <p id="inviteModalMsg" class="msg"></p>
+    </div>
+    <footer class="modal__foot">
+      <button class="ghost"   data-close type="button">취소</button>
+      <button id="inviteSubmitBtn" class="primary" type="button">초대</button>
+    </footer>
+  </div>
+</div>
+
+<script th:inline="javascript">
+  /*<![CDATA[*/
+  window.__ROOM_ID__ = /*[[${roomId}]]*/ 0;
+  /*]]>*/
+</script>
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+<script th:src="@{/js/auth.js}"></script>
+<script th:src="@{/js/avatar.js}"></script>
+<script th:src="@{/js/chat-room.js}"></script>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.messenger.chatroom.mapper.ChatRoomMapper">
+
+    <resultMap id="ChatRoomMap" type="com.example.messenger.chatroom.domain.ChatRoom">
+        <id     property="id"        column="id"/>
+        <result property="type"      column="type"/>
+        <result property="title"     column="title"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <resultMap id="UserMap" type="com.example.messenger.user.domain.User">
+        <id     property="id"               column="id"/>
+        <result property="email"            column="email"/>
+        <result property="passwordHash"     column="password_hash"/>
+        <result property="nickname"         column="nickname"/>
+        <result property="profileImageUrl"  column="profile_image_url"/>
+        <result property="statusMessage"    column="status_message"/>
+        <result property="createdAt"        column="created_at"/>
+        <result property="updatedAt"        column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="SummaryMap" type="com.example.messenger.chatroom.dto.ChatRoomSummary">
+        <result property="roomId"                  column="room_id"/>
+        <result property="roomType"                column="room_type"/>
+        <result property="displayTitle"            column="display_title"/>
+        <result property="displayProfileImageUrl"  column="display_profile_image_url"/>
+        <result property="lastMessageId"           column="last_message_id"/>
+        <result property="lastMessagePreview"      column="last_message_preview"/>
+        <result property="lastMessageAt"           column="last_message_at"/>
+        <result property="unreadCount"             column="unread_count"/>
+    </resultMap>
+
+    <insert id="insertRoom" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO chat_rooms (type, title, created_by)
+        VALUES (#{type}, #{title}, #{createdBy})
+    </insert>
+
+    <insert id="insertMember" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO chat_room_members (room_id, user_id)
+        VALUES (#{roomId}, #{userId})
+    </insert>
+
+    <select id="findRoomById" resultMap="ChatRoomMap">
+        SELECT * FROM chat_rooms WHERE id = #{id}
+    </select>
+
+    <!--
+      두 사용자의 1:1 방을 찾는다.
+      type='DIRECT' 이고 멤버가 정확히 두 사람(A, B)인 방의 id 를 리턴.
+    -->
+    <select id="findDirectRoomId" resultType="long">
+        SELECT r.id
+          FROM chat_rooms r
+          JOIN chat_room_members m1 ON m1.room_id = r.id AND m1.user_id = #{userA}
+          JOIN chat_room_members m2 ON m2.room_id = r.id AND m2.user_id = #{userB}
+         WHERE r.type = 'DIRECT'
+           AND (SELECT count(*) FROM chat_room_members m WHERE m.room_id = r.id) = 2
+         LIMIT 1
+    </select>
+
+    <select id="isMember" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM chat_room_members
+             WHERE room_id = #{roomId} AND user_id = #{userId}
+        )
+    </select>
+
+    <select id="findMembers" resultMap="UserMap">
+        SELECT u.*
+          FROM chat_room_members m
+          JOIN users u ON u.id = m.user_id
+         WHERE m.room_id = #{roomId}
+         ORDER BY u.nickname
+    </select>
+
+    <select id="findMemberUserIds" resultType="long">
+        SELECT user_id
+          FROM chat_room_members
+         WHERE room_id = #{roomId}
+    </select>
+
+    <!--
+      내 방 목록 + 마지막 메시지 미리보기 + 안 읽은 수.
+      DIRECT 방은 상대방 닉네임을 display_title 로 보여준다.
+    -->
+    <select id="listMyRoomSummaries" resultMap="SummaryMap">
+        SELECT
+            r.id   AS room_id,
+            r.type AS room_type,
+            CASE
+                WHEN r.type = 'GROUP' THEN COALESCE(r.title, '그룹채팅')
+                ELSE COALESCE(other.nickname, '(상대방 없음)')
+            END AS display_title,
+            CASE
+                WHEN r.type = 'GROUP' THEN NULL
+                ELSE other.profile_image_url
+            END AS display_profile_image_url,
+            lm.id           AS last_message_id,
+            LEFT(lm.content, 100) AS last_message_preview,
+            lm.created_at   AS last_message_at,
+            COALESCE(unread.cnt, 0) AS unread_count
+        FROM chat_room_members me
+        JOIN chat_rooms r ON r.id = me.room_id
+        LEFT JOIN LATERAL (
+            SELECT u.nickname, u.profile_image_url
+              FROM chat_room_members mm
+              JOIN users u ON u.id = mm.user_id
+             WHERE mm.room_id = r.id AND mm.user_id <![CDATA[ <> ]]> #{userId}
+             LIMIT 1
+        ) other ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT m.id, m.content, m.created_at
+              FROM messages m
+             WHERE m.room_id = r.id
+             ORDER BY m.id DESC
+             LIMIT 1
+        ) lm ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT count(*) AS cnt
+              FROM messages m
+             WHERE m.room_id = r.id
+               AND m.id <![CDATA[ > ]]> COALESCE(me.last_read_message_id, 0)
+               AND m.sender_id <![CDATA[ <> ]]> me.user_id
+        ) unread ON TRUE
+        WHERE me.user_id = #{userId}
+        ORDER BY lm.created_at DESC NULLS LAST
+    </select>
+
+    <update id="updateLastRead">
+        UPDATE chat_room_members
+           SET last_read_message_id = GREATEST(COALESCE(last_read_message_id, 0), #{messageId})
+         WHERE room_id = #{roomId} AND user_id = #{userId}
+    </update>
+
+    <delete id="removeMember">
+        DELETE FROM chat_room_members
+         WHERE room_id = #{roomId} AND user_id = #{userId}
+    </delete>
+
+</mapper>

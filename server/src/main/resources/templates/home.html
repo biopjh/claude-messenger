@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>내 정보 · Messenger</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<main class="container">
+  <header class="topbar">
+    <h1>내 정보</h1>
+    <div class="topbar__right">
+      <a th:href="@{/home}" class="link-btn">채팅 목록</a>
+      <button id="logoutBtn" type="button">로그아웃</button>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="profile-edit">
+      <div class="profile-edit__avatar-wrap">
+        <div id="avatarPreview"></div>
+        <input id="avatarInput" type="file" accept="image/*" hidden>
+        <div class="profile-edit__avatar-actions">
+          <button id="changeAvatarBtn" type="button" class="ghost">이미지 변경</button>
+          <button id="removeAvatarBtn" type="button" class="ghost">이미지 제거</button>
+        </div>
+        <p id="avatarMsg" class="muted small"></p>
+      </div>
+
+      <form id="profileForm" class="profile-edit__form">
+        <label>
+          <span>이메일</span>
+          <input type="email" id="emailInput" disabled>
+        </label>
+        <label>
+          <span>닉네임</span>
+          <input type="text" id="nicknameInput" minlength="2" maxlength="20" required>
+        </label>
+        <label>
+          <span>상태메시지</span>
+          <textarea id="statusInput" maxlength="200" rows="2" placeholder="예: 안녕하세요"></textarea>
+        </label>
+        <input type="hidden" id="profileImageUrl">
+        <div class="profile-edit__actions">
+          <button type="submit" class="primary">저장</button>
+          <span id="formMsg" class="msg"></span>
+        </div>
+      </form>
+    </div>
+  </section>
+</main>
+
+<script th:src="@{/js/auth.js}"></script>
+<script th:src="@{/js/avatar.js}"></script>
+<script>
+  (async function init() {
+    await Auth.bootstrap();
+    const token = Auth.getAccess();
+    if (!token) { location.href = '/login'; return; }
+
+    const res = await fetch('/api/users/me', { headers: { 'Authorization': 'Bearer ' + token } });
+    const json = await res.json();
+    if (!json.success) { Auth.clear(); location.href = '/login'; return; }
+    fillForm(json.data);
+  })();
+
+  function fillForm(u) {
+    document.getElementById('emailInput').value = u.email;
+    document.getElementById('nicknameInput').value = u.nickname;
+    document.getElementById('statusInput').value = u.statusMessage || '';
+    document.getElementById('profileImageUrl').value = u.profileImageUrl || '';
+    refreshAvatar();
+  }
+
+  function refreshAvatar() {
+    const url = document.getElementById('profileImageUrl').value;
+    const name = document.getElementById('nicknameInput').value || '?';
+    document.getElementById('avatarPreview').innerHTML =
+      Avatar.renderAvatarHTML(name, url || null, 'avatar--xl');
+  }
+
+  // 닉네임이 바뀌면 이니셜 아바타도 미리보기 갱신
+  document.getElementById('nicknameInput').addEventListener('input', refreshAvatar);
+
+  document.getElementById('changeAvatarBtn').addEventListener('click', () =>
+    document.getElementById('avatarInput').click());
+
+  document.getElementById('avatarInput').addEventListener('change', async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    const msg = document.getElementById('avatarMsg');
+    msg.textContent = `업로드 중… ${f.name}`;
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const res = await fetch('/api/files', {
+        method: 'POST',
+        headers: { ...Auth.authHeader() },
+        body: fd,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 401) { Auth.clear(); location.href = '/login'; return; }
+      if (!json.success) throw new Error(json.error?.message || '업로드 실패');
+      if (json.data.kind !== 'IMAGE') throw new Error('이미지 파일만 업로드할 수 있습니다.');
+      document.getElementById('profileImageUrl').value = json.data.url;
+      refreshAvatar();
+      msg.textContent = '업로드 완료. 저장 버튼을 눌러야 반영됩니다.';
+    } catch (err) {
+      msg.textContent = err.message;
+    }
+  });
+
+  document.getElementById('removeAvatarBtn').addEventListener('click', () => {
+    document.getElementById('profileImageUrl').value = '';
+    refreshAvatar();
+    document.getElementById('avatarMsg').textContent = '저장 버튼을 눌러야 반영됩니다.';
+  });
+
+  document.getElementById('profileForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+      nickname: document.getElementById('nicknameInput').value.trim(),
+      statusMessage: document.getElementById('statusInput').value,
+      profileImageUrl: document.getElementById('profileImageUrl').value,
+    };
+    const msg = document.getElementById('formMsg');
+    msg.className = 'msg';
+    try {
+      const res = await fetch('/api/users/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...Auth.authHeader() },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error?.message || '저장 실패');
+      msg.className = 'msg ok';
+      msg.textContent = '저장되었습니다.';
+      fillForm(json.data);
+    } catch (err) {
+      msg.className = 'msg error';
+      msg.textContent = err.message;
+    }
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    Auth.clear();
+    location.href = '/login';
+  });
+</script>
+</body>
+</html>

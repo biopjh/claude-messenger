@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.messenger.user.mapper.UserMapper">
+
+    <resultMap id="UserMap" type="com.example.messenger.user.domain.User">
+        <id     property="id"               column="id"/>
+        <result property="email"            column="email"/>
+        <result property="passwordHash"     column="password_hash"/>
+        <result property="nickname"         column="nickname"/>
+        <result property="profileImageUrl"  column="profile_image_url"/>
+        <result property="statusMessage"    column="status_message"/>
+        <result property="createdAt"        column="created_at"/>
+        <result property="updatedAt"        column="updated_at"/>
+    </resultMap>
+
+    <select id="findById" resultMap="UserMap">
+        SELECT * FROM users WHERE id = #{id}
+    </select>
+
+    <select id="findByEmail" resultMap="UserMap">
+        SELECT * FROM users WHERE email = #{email}
+    </select>
+
+    <select id="countByEmail" resultType="int">
+        SELECT COUNT(*) FROM users WHERE email = #{email}
+    </select>
+
+    <insert id="insert"
+            parameterType="com.example.messenger.user.domain.User"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO users (email, password_hash, nickname, profile_image_url, status_message)
+        VALUES (#{email}, #{passwordHash}, #{nickname}, #{profileImageUrl}, #{statusMessage})
+    </insert>
+
+    <update id="updateProfile">
+        UPDATE users
+           SET nickname          = #{nickname},
+               status_message    = #{statusMessage},
+               profile_image_url = #{profileImageUrl},
+               updated_at        = now()
+         WHERE id = #{id}
+    </update>
+
+    <select id="search" resultMap="UserMap">
+        SELECT *
+          FROM users
+         WHERE id <![CDATA[ <> ]]> #{excludeUserId}
+           AND ( email    ILIKE '%' || #{query} || '%'
+              OR nickname ILIKE '%' || #{query} || '%' )
+         ORDER BY nickname
+         LIMIT #{limit}
+    </select>
+
+</mapper>

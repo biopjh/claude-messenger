@@ -1,0 +1,78 @@
+name: Build & Release
+
+# 트리거:
+#   - tag push (v0.2.0 형태) → 정식 릴리스 빌드 + GitHub Releases 업로드 + 자동 업데이트 발행
+#   - 수동 (workflow_dispatch) → 동일 동작
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Releases 생성/수정에는 contents:write 권한이 필요
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+
+      # Electron 바이너리(약 100MB) 캐시로 두 번째 빌드부터 빠르게
+      - name: Cache Electron binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: ${{ matrix.os }}-electron-${{ hashFiles('client/package-lock.json') }}
+          restore-keys: |
+            ${{ matrix.os }}-electron-
+
+      - name: Install dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Build & publish (${{ matrix.platform }})
+        working-directory: client
+        env:
+          # GITHUB_TOKEN 은 actions 가 자동으로 주입. electron-builder 가 이걸 GH_TOKEN 으로 쓴다.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # === 코드 사이닝 (선택) ===
+          # 아래 secrets 가 등록되어 있을 때만 자동으로 사인됨.
+          #   macOS:    CSC_LINK / CSC_KEY_PASSWORD (인증서 .p12 base64) + APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID(공증)
+          #   Windows:  CSC_LINK / CSC_KEY_PASSWORD
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          npx electron-builder --${{ matrix.platform }} \
+            --config ../installer/electron-builder.yml \
+            --publish always

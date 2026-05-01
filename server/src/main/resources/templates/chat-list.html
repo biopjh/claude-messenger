@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>채팅 · Messenger</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<main class="container">
+  <header class="topbar">
+    <h1>Messenger</h1>
+    <div class="topbar__right">
+      <span id="userBadge"></span>
+      <a th:href="@{/me}" class="link-btn">내 정보</a>
+      <button id="logoutBtn" type="button">로그아웃</button>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h2>친구 추가</h2>
+    </div>
+    <div class="search-row">
+      <input id="searchInput" type="text" placeholder="이메일 또는 닉네임으로 검색">
+      <button id="searchBtn" type="button">검색</button>
+    </div>
+    <ul id="searchResults" class="list"></ul>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h2>받은 친구 요청</h2>
+      <button id="reloadIncoming" class="link-btn" type="button">새로고침</button>
+    </div>
+    <ul id="incomingList" class="list"></ul>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h2>친구 목록</h2>
+      <button id="reloadFriends" class="link-btn" type="button">새로고침</button>
+    </div>
+    <ul id="friendsList" class="list"></ul>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h2>채팅방</h2>
+      <div class="panel__head-actions">
+        <button id="newGroupBtn" class="link-btn" type="button">＋ 그룹채팅 만들기</button>
+        <button id="reloadRooms" class="link-btn" type="button">새로고침</button>
+      </div>
+    </div>
+    <ul id="roomsList" class="list"></ul>
+  </section>
+</main>
+
+<!-- 그룹채팅 만들기 모달 -->
+<div id="groupModal" class="modal hidden" aria-hidden="true">
+  <div class="modal__backdrop" data-close></div>
+  <div class="modal__panel">
+    <header class="modal__head">
+      <h3>그룹채팅 만들기</h3>
+      <button class="icon-btn" data-close aria-label="닫기">×</button>
+    </header>
+    <div class="modal__body">
+      <label class="modal__label">
+        방 제목
+        <input id="groupTitleInput" type="text" maxlength="80" placeholder="예: 주말 등산 모임">
+      </label>
+      <p class="muted small">초대할 친구를 선택하세요. (친구만 초대 가능)</p>
+      <ul id="groupFriendList" class="list checklist"></ul>
+      <p id="groupModalMsg" class="msg"></p>
+    </div>
+    <footer class="modal__foot">
+      <button class="ghost"   data-close type="button">취소</button>
+      <button id="groupCreateBtn" class="primary" type="button">만들기</button>
+    </footer>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+<script th:src="@{/js/auth.js}"></script>
+<script th:src="@{/js/avatar.js}"></script>
+<script th:src="@{/js/chat-list.js}"></script>
+</body>
+</html>
