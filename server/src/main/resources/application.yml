@@ -2,9 +2,9 @@ spring:
   application:
     name: messenger
   datasource:
-    url: jdbc:postgresql://localhost:5432/springboot
-    username: biopjh
-    password: "8919"
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/springboot}
+    username: ${SPRING_DATASOURCE_USERNAME:biopjh}
+    password: ${SPRING_DATASOURCE_PASSWORD:8919}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10

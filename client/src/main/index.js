@@ -162,7 +162,8 @@ function createMainWindow() {
     minWidth: 380,
     minHeight: 480,
     title: TITLE_BASE,
-    autoHideMenuBar: true,
+    // Windows/Linux 에서는 메뉴바를 항상 표시. (Mac 은 OS 상단 메뉴바라 영향 없음)
+    autoHideMenuBar: process.platform === 'darwin',
     backgroundColor: '#f3f4f6',
     icon: ICON_PATH,
     webPreferences: {
