@@ -60,20 +60,35 @@ jobs:
         # 학습 단계에서는 npm install 이 더 관대해서 안전. (락 파일이 있으면 그대로 사용)
         run: npm install --no-audit --no-fund
 
+      # 코드 사이닝 secrets 가 등록되어 있을 때만 env 로 주입.
+      # (빈 값을 그대로 env 에 두면 electron-builder Windows 빌드가
+      #  CSC_LINK 를 빈 경로로 해석해 실패하므로 반드시 분리한다.)
+      - name: Configure code signing (only if secrets are set)
+        shell: bash
+        env:
+          IN_CSC_LINK: ${{ secrets.CSC_LINK }}
+          IN_CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          IN_APPLE_ID: ${{ secrets.APPLE_ID }}
+          IN_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          IN_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$IN_CSC_LINK" ]; then
+            echo "CSC_LINK=$IN_CSC_LINK"               >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$IN_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "→ code signing enabled"
+          else
+            echo "→ code signing skipped (no CSC_LINK secret)"
+          fi
+          if [ -n "$IN_APPLE_ID" ]; then
+            echo "APPLE_ID=$IN_APPLE_ID"                                       >> "$GITHUB_ENV"
+            echo "APPLE_APP_SPECIFIC_PASSWORD=$IN_APPLE_APP_SPECIFIC_PASSWORD" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=$IN_APPLE_TEAM_ID"                             >> "$GITHUB_ENV"
+            echo "→ macOS notarization enabled"
+          fi
+
       - name: Build & publish (${{ matrix.platform }})
         working-directory: client
-        # Windows 러너 기본 셸(PowerShell)은 백슬래시 줄바꿈을 인식하지 못하므로
-        # 모든 OS 에서 동일하게 동작하도록 한 줄로 작성한다.
         env:
           # GITHUB_TOKEN 은 actions 가 자동으로 주입. electron-builder 가 이걸 GH_TOKEN 으로 쓴다.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # === 코드 사이닝 (선택) ===
-          # 아래 secrets 가 등록되어 있을 때만 자동으로 사인됨.
-          #   macOS:    CSC_LINK / CSC_KEY_PASSWORD (인증서 .p12 base64) + APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID(공증)
-          #   Windows:  CSC_LINK / CSC_KEY_PASSWORD
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --${{ matrix.platform }} --config ../installer/electron-builder.yml --publish always
