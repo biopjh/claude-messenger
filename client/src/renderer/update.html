@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>업데이트</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "맑은 고딕", "Malgun Gothic", sans-serif;
+      background: #f3f4f6; color: #111827;
+    }
+    body { display: flex; flex-direction: column; }
+    main {
+      flex: 1; padding: 24px 28px 8px; display: flex; flex-direction: column; justify-content: center;
+    }
+    .row { display: flex; align-items: center; gap: 14px; }
+    .text { font-size: 15px; }
+    .muted { font-size: 12px; color: #6b7280; margin-top: 6px; }
+    .err { font-size: 12px; color: #dc2626; margin-top: 6px; word-break: break-word; max-height: 84px; overflow: auto; }
+
+    /* 스피너 */
+    .spinner {
+      width: 28px; height: 28px;
+      border: 3px solid #d1d5db;
+      border-top-color: #2563eb;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 체크/엑스 마크 */
+    .mark {
+      width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 18px; color: #fff; font-weight: 700;
+    }
+    .mark--ok    { background: #10b981; }
+    .mark--info  { background: #2563eb; }
+    .mark--error { background: #ef4444; }
+
+    /* 진행 바 */
+    .progress {
+      margin-top: 14px; height: 8px; background: #e5e7eb;
+      border-radius: 999px; overflow: hidden;
+    }
+    .progress__fill {
+      height: 100%; background: #2563eb;
+      width: 0%; transition: width 200ms ease-out;
+    }
+    .progress-meta {
+      display: flex; justify-content: space-between; font-size: 12px; color: #6b7280; margin-top: 6px;
+    }
+
+    /* 푸터 액션 */
+    footer {
+      padding: 10px 16px; border-top: 1px solid #e5e7eb;
+      display: flex; justify-content: flex-end; gap: 8px;
+      background: #fff;
+    }
+    footer button {
+      padding: 7px 14px; border: 0; border-radius: 8px;
+      font-size: 13px; cursor: pointer;
+    }
+    footer .ghost   { background: #f3f4f6; color: #374151; }
+    footer .primary { background: #2563eb; color: #fff; font-weight: 600; }
+    footer .primary:hover { background: #1d4ed8; }
+    footer button[hidden] { display: none; }
+
+    .state { display: none; }
+    .state--active { display: block; }
+  </style>
+</head>
+<body>
+  <main>
+    <!-- 1. 확인 중 -->
+    <div id="state-checking" class="state">
+      <div class="row">
+        <div class="spinner"></div>
+        <div>
+          <div class="text">업데이트 확인 중…</div>
+          <div class="muted">GitHub Releases 에서 최신 버전을 조회하고 있습니다.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 최신 버전 사용 중 -->
+    <div id="state-up-to-date" class="state">
+      <div class="row">
+        <div class="mark mark--ok">✓</div>
+        <div>
+          <div class="text">최신 버전을 사용 중입니다.</div>
+          <div class="muted">현재 버전: <span data-current-version></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. 새 버전 발견 -->
+    <div id="state-available" class="state">
+      <div class="row">
+        <div class="mark mark--info">↓</div>
+        <div>
+          <div class="text">새 버전 <span data-version></span> 을(를) 찾았습니다.</div>
+          <div class="muted">잠시 후 다운로드가 시작됩니다…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. 다운로드 중 -->
+    <div id="state-downloading" class="state">
+      <div class="row">
+        <div class="spinner"></div>
+        <div style="flex:1; min-width:0;">
+          <div class="text">버전 <span data-version></span> 다운로드 중</div>
+          <div class="progress"><div class="progress__fill" data-progress-fill></div></div>
+          <div class="progress-meta">
+            <span><span data-percent>0</span>%</span>
+            <span data-speed></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. 다운로드 완료 -->
+    <div id="state-downloaded" class="state">
+      <div class="row">
+        <div class="mark mark--ok">✓</div>
+        <div>
+          <div class="text">버전 <span data-version></span> 다운로드 완료</div>
+          <div class="muted">설치하려면 앱을 재시작해야 합니다.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. dev 모드 안내 -->
+    <div id="state-dev" class="state">
+      <div class="row">
+        <div class="mark mark--info">ⓘ</div>
+        <div>
+          <div class="text">개발 모드에서는 자동 업데이트가 동작하지 않습니다.</div>
+          <div class="muted">패키징된 설치본(.dmg / .exe / .AppImage) 에서만 작동합니다.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. 에러 -->
+    <div id="state-error" class="state">
+      <div class="row">
+        <div class="mark mark--error">!</div>
+        <div style="min-width:0;">
+          <div class="text">업데이트 확인에 실패했습니다.</div>
+          <div class="err" data-error-message></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8. 초기 / idle -->
+    <div id="state-idle" class="state">
+      <div class="row">
+        <div class="spinner"></div>
+        <div>
+          <div class="text">잠시만 기다려주세요…</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <button id="closeBtn" class="ghost" type="button">닫기</button>
+    <button id="installBtn" class="primary" type="button" hidden>지금 재시작하고 설치</button>
+  </footer>
+
+  <script>
+    const $  = (sel) => document.querySelector(sel);
+    const $$ = (sel) => document.querySelectorAll(sel);
+
+    function showState(name) {
+      $$('.state').forEach(el => el.classList.remove('state--active'));
+      const target = document.getElementById('state-' + name);
+      if (target) target.classList.add('state--active');
+    }
+    function setText(attr, text) {
+      $$(`[data-${attr}]`).forEach(el => { el.textContent = text; });
+    }
+    function humanSpeed(bps) {
+      if (!bps) return '';
+      if (bps < 1024)            return Math.round(bps) + ' B/s';
+      if (bps < 1024 * 1024)     return (bps/1024).toFixed(1) + ' KB/s';
+      return (bps/1024/1024).toFixed(1) + ' MB/s';
+    }
+
+    function applyState(s) {
+      const phase = s?.phase || 'idle';
+      const installBtn = $('#installBtn');
+      installBtn.hidden = (phase !== 'downloaded');
+
+      switch (phase) {
+        case 'idle':
+          showState('idle');
+          break;
+        case 'checking':
+          showState('checking');
+          break;
+        case 'up-to-date':
+          showState('up-to-date');
+          setText('current-version', s.version || '');
+          break;
+        case 'available':
+          showState('available');
+          setText('version', s.version || '');
+          break;
+        case 'downloading':
+          showState('downloading');
+          setText('version', s.version || '');
+          setText('percent', s.percent || 0);
+          setText('speed',   humanSpeed(s.bytesPerSecond));
+          $('[data-progress-fill]').style.width = (s.percent || 0) + '%';
+          break;
+        case 'downloaded':
+          showState('downloaded');
+          setText('version', s.version || '');
+          break;
+        case 'dev':
+          showState('dev');
+          break;
+        case 'error':
+          showState('error');
+          $('[data-error-message]').textContent = s.message || '';
+          break;
+        default:
+          showState('idle');
+      }
+    }
+
+    // 초기 상태 즉시 가져오기
+    if (window.messengerNative && window.messengerNative.update) {
+      window.messengerNative.update.getState().then(applyState).catch(() => applyState({ phase: 'idle' }));
+      // 이후 변동 사항 구독
+      window.messengerNative.update.onStatus(applyState);
+    } else {
+      applyState({ phase: 'error', message: 'messengerNative.update API 가 없습니다.' });
+    }
+
+    $('#closeBtn').addEventListener('click', () => {
+      if (window.messengerNative?.update) window.messengerNative.update.close();
+      else window.close();
+    });
+    $('#installBtn').addEventListener('click', () => {
+      window.messengerNative.update.install();
+    });
+  </script>
+</body>
+</html>

@@ -40,4 +40,16 @@ contextBridge.exposeInMainWorld('messengerNative', {
   window: {
     show: () => ipcRenderer.invoke('window:show'),
   },
+
+  /** 자동 업데이트 진행 UI 가 사용 */
+  update: {
+    /** 현재 업데이트 상태(phase/version/percent 등) 즉시 조회 */
+    getState: () => ipcRenderer.invoke('update:get-state'),
+    /** 다운로드 완료 후 호출 — quitAndInstall */
+    install:  () => ipcRenderer.invoke('update:install'),
+    /** 업데이트 창 닫기 */
+    close:    () => ipcRenderer.invoke('update:close'),
+    /** 업데이트 상태가 바뀔 때마다 호출. cb(state) */
+    onStatus: (cb) => ipcRenderer.on('update:status', (_e, payload) => cb(payload)),
+  },
 });

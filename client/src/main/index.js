@@ -384,32 +384,112 @@ function buildAppMenu() {
 // ───────────────────────── 자동 업데이트 ─────────────────────────────
 // electron-updater 가 publish 설정(electron-builder.yml → GitHub Releases)을 읽어
 // 새 버전(`latest.yml`/`latest-mac.yml`/`latest-linux.yml`)을 주기적으로 확인한다.
-// dev 모드(`npm start`)에서는 app.isPackaged === false 라 자동 체크는 스킵하지만,
-// 메뉴 → "업데이트 확인" 으로 강제 호출은 가능 (실패해도 친절히 안내).
+// 사용자가 메뉴 → "업데이트 확인" 을 누르면 작은 진행 창이 떠서 검사·다운로드·설치
+// 진행률을 실시간으로 보여준다. 동시에 메인 창의 작업표시줄(Windows)/도크(macOS)
+// 아이콘에도 진행 게이지가 표시된다.
 
+const UPDATE_HTML = path.join(__dirname, '..', 'renderer', 'update.html');
 let updateCheckInterval = null;
+/** @type {BrowserWindow | null} */
+let updateWindow = null;
+
+/**
+ * 업데이트 진행 상태. autoUpdater 이벤트 핸들러가 업데이트하며,
+ * 변경 시 진행 창과 main window 작업표시줄 게이지로 동시에 반영된다.
+ */
+const UpdateState = {
+  current: {
+    phase: 'idle',          // idle | checking | up-to-date | available | downloading | downloaded | error | dev
+    version: app.getVersion(),
+    percent: 0,
+    bytesPerSecond: 0,
+    message: '',
+  },
+  set(patch) {
+    this.current = { ...this.current, ...patch };
+    // 진행 창에 푸시
+    if (updateWindow && !updateWindow.isDestroyed()) {
+      updateWindow.webContents.send('update:status', this.current);
+    }
+    // 작업표시줄/도크 게이지 (Windows/Linux/macOS 공통)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (this.current.phase === 'downloading') {
+        mainWindow.setProgressBar(Math.max(0.001, Math.min(1, this.current.percent / 100)));
+      } else {
+        mainWindow.setProgressBar(-1);   // 게이지 제거
+      }
+    }
+  },
+};
+
+function openUpdateWindow() {
+  if (updateWindow && !updateWindow.isDestroyed()) {
+    updateWindow.show();
+    updateWindow.focus();
+    return;
+  }
+  updateWindow = new BrowserWindow({
+    width: 460,
+    height: 300,
+    parent: mainWindow || undefined,
+    modal: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    resizable: false,
+    title: '업데이트',
+    autoHideMenuBar: true,
+    backgroundColor: '#f3f4f6',
+    icon: ICON_PATH,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+  updateWindow.loadFile(UPDATE_HTML).catch((e) => log.error('update window loadFile failed', e));
+  updateWindow.on('closed', () => { updateWindow = null; });
+}
 
 function bindAutoUpdaterEvents() {
-  autoUpdater.on('checking-for-update', () => log.info('[updater] checking…'));
-  autoUpdater.on('update-not-available', (info) => log.info('[updater] up to date:', info?.version));
+  autoUpdater.on('checking-for-update', () => {
+    log.info('[updater] checking…');
+    UpdateState.set({ phase: 'checking', message: '' });
+  });
+  autoUpdater.on('update-not-available', (info) => {
+    log.info('[updater] up to date:', info?.version);
+    UpdateState.set({ phase: 'up-to-date', version: app.getVersion() });
+  });
   autoUpdater.on('update-available', (info) => {
     log.info('[updater] update available:', info?.version);
-    // 다운로드는 자동(autoDownload=true) — 백그라운드로 진행됨
+    UpdateState.set({ phase: 'available', version: info?.version, percent: 0 });
   });
   autoUpdater.on('download-progress', (p) => {
-    log.info(`[updater] downloading ${p.percent.toFixed(1)}%  (${(p.bytesPerSecond/1024).toFixed(0)} KB/s)`);
+    const pct = Math.round(p.percent || 0);
+    log.info(`[updater] downloading ${pct}%  (${(p.bytesPerSecond/1024).toFixed(0)} KB/s)`);
+    UpdateState.set({
+      phase: 'downloading',
+      percent: pct,
+      bytesPerSecond: p.bytesPerSecond || 0,
+    });
   });
   autoUpdater.on('error', (err) => {
     log.error('[updater] error:', err && (err.stack || err.message || err));
+    UpdateState.set({ phase: 'error', message: String((err && (err.message || err)) || '알 수 없는 오류') });
   });
   autoUpdater.on('update-downloaded', async (info) => {
     log.info('[updater] downloaded:', info?.version);
+    UpdateState.set({ phase: 'downloaded', version: info?.version, percent: 100 });
+
+    // 진행 창이 열려 있으면 거기서 버튼으로 처리. 닫혀 있으면 dialog 폴백.
+    if (updateWindow && !updateWindow.isDestroyed()) return;
+
     const win = mainWindow || BrowserWindow.getAllWindows()[0];
     const { response } = await dialog.showMessageBox(win, {
       type: 'info',
       buttons: ['지금 재시작하고 설치', '나중에'],
-      defaultId: 0,
-      cancelId: 1,
+      defaultId: 0, cancelId: 1,
       message: '새 버전 다운로드 완료',
       detail: `버전 ${info?.version || ''} 가 준비되었습니다.\n` +
               `지금 설치하시겠어요? 다음에 종료할 때 자동으로 설치됩니다.`,
@@ -421,50 +501,49 @@ function bindAutoUpdaterEvents() {
   });
 }
 
-/** silent=true: 결과를 dialog 로 알리지 않음(자동 체크). silent=false: 사용자 클릭(메뉴) */
+/** silent=true: 진행 창 안 띄움(자동 체크). silent=false: 메뉴 → 진행 창 표시 */
 async function checkForUpdates({ silent = true } = {}) {
-  // dev 모드에서는 publishing 정보가 없을 수 있어 그냥 메시지만
+  if (!silent) openUpdateWindow();
+
   if (!app.isPackaged) {
-    if (!silent) {
-      dialog.showMessageBox(mainWindow || undefined, {
-        type: 'info',
-        message: '개발 모드에서는 자동 업데이트가 동작하지 않습니다.',
-        detail: '패키징된 설치본(npm run dist)에서만 작동합니다.',
-      });
-    }
     log.info('[updater] dev mode — skipping');
+    UpdateState.set({
+      phase: 'dev',
+      message: '개발 모드에서는 자동 업데이트가 동작하지 않습니다.\n패키징된 설치본(.dmg/.exe/.AppImage)에서만 작동합니다.',
+    });
     return;
   }
+
+  // 진행 창에 즉시 "확인 중" 상태를 보여줌
+  if (!silent) UpdateState.set({ phase: 'checking', message: '' });
+
   try {
-    const result = await autoUpdater.checkForUpdates();
-    if (!silent) {
-      const v = result?.updateInfo?.version;
-      if (!v || v === app.getVersion()) {
-        dialog.showMessageBox(mainWindow || undefined, {
-          type: 'info',
-          message: '최신 버전을 사용 중입니다.',
-          detail: `현재 버전: ${app.getVersion()}`,
-        });
-      }
-    }
+    await autoUpdater.checkForUpdates();
+    // 결과는 이벤트 핸들러가 이어서 phase 를 업데이트함
   } catch (e) {
     log.error('[updater] checkForUpdates failed:', e);
-    if (!silent) {
-      dialog.showMessageBox(mainWindow || undefined, {
-        type: 'warning',
-        message: '업데이트 확인에 실패했습니다.',
-        detail: String(e?.message || e),
-      });
-    }
+    UpdateState.set({ phase: 'error', message: String(e?.message || e) });
   }
 }
 
+function registerUpdateIpc() {
+  ipcMain.handle('update:get-state', () => UpdateState.current);
+  ipcMain.handle('update:install',   () => {
+    isQuitting = true;
+    autoUpdater.quitAndInstall();
+    return true;
+  });
+  ipcMain.handle('update:close',     () => {
+    if (updateWindow && !updateWindow.isDestroyed()) updateWindow.close();
+    return true;
+  });
+}
+
 function startUpdateChecker() {
-  if (!app.isPackaged) return;             // dev 모드 자동 체크 안 함
+  registerUpdateIpc();           // dev 모드에서도 IPC 핸들러는 등록 (창 열어도 동작하도록)
   bindAutoUpdaterEvents();
-  // 시작 30초 후 첫 체크 (기동 직후 부하 회피)
+  if (!app.isPackaged) return;   // dev 모드는 자동 체크 스킵
   setTimeout(() => checkForUpdates({ silent: true }), 30 * 1000);
-  // 이후 6시간마다
   updateCheckInterval = setInterval(() => checkForUpdates({ silent: true }), 6 * 60 * 60 * 1000);
 }
 
