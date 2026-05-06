@@ -2,6 +2,7 @@ package com.example.messenger.config;
 
 import com.example.messenger.auth.jwt.JwtAuthFilter;
 import com.example.messenger.common.response.ApiResponse;
+import com.example.messenger.security.RateLimitFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -14,6 +15,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.security.web.header.writers.frameoptions.XFrameOptionsHeaderWriter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -25,27 +28,48 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final RateLimitFilter rateLimitFilter;
     private final ObjectMapper objectMapper;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         return http
+                // 현재 단계: CSRF 비활성. 토큰 기반 인증이라 CSRF 영향 적음. 다음 세션에서
+                // 쿠키-only 전환 시 CookieCsrfTokenRepository 로 전환 예정.
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsSource()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .formLogin(f -> f.disable())
                 .httpBasic(b -> b.disable())
+
+                // ─── 보안 헤더 ───────────────────────────────────────────────
+                .headers(h -> h
+                        .contentTypeOptions(c -> {})                              // X-Content-Type-Options: nosniff
+                        .referrerPolicy(rp -> rp.policy(
+                                ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                        .frameOptions(fo -> fo.sameOrigin())                       // 동일출처 iframe 만 허용
+                        .contentSecurityPolicy(csp -> csp.policyDirectives(
+                                // 'unsafe-inline' 은 학습용 인라인 스크립트(template) 호환을 위해 둠.
+                                // 운영에서는 nonce 또는 hash 기반으로 강화 가능.
+                                "default-src 'self'; " +
+                                "img-src 'self' data: blob: https:; " +
+                                "media-src 'self' blob:; " +
+                                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+                                "style-src 'self' 'unsafe-inline'; " +
+                                "connect-src 'self' ws: wss: https:; " +
+                                "font-src 'self' data:; " +
+                                "frame-ancestors 'self'; " +
+                                "base-uri 'self'; " +
+                                "form-action 'self'"))
+                )
+
                 .authorizeHttpRequests(auth -> auth
-                        // Thymeleaf 페이지(브라우저용)와 정적 자원, 공개 API
-                        // (페이지 자체는 anyone이 받지만, 페이지 내부의 fetch 가 401 받으면 JS가 /login 으로 리다이렉트)
                         .requestMatchers(
                                 "/", "/login", "/signup", "/home", "/me", "/rooms/**",
                                 "/css/**", "/js/**", "/images/**", "/favicon.ico",
                                 "/api/auth/**",
                                 "/ws-chat/**"
                         ).permitAll()
-                        // 업로드된 파일 다운로드/뷰어는 <img src="..."> 처럼 헤더를 못 박는 곳에서도 보여야 하므로 GET 만 공개
-                        // (UUID 기반 파일명에 의존하는 학습용 단순화. 운영용은 signed URL 권장)
                         .requestMatchers(HttpMethod.GET, "/api/files/**").permitAll()
                         .anyRequest().authenticated()
                 )
@@ -58,7 +82,9 @@ public class SecurityConfig {
                                     ApiResponse.fail("AUTH_002", "로그인이 필요합니다.")));
                         })
                 )
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                // RateLimit 가 가장 먼저 — JWT 검증 비용이 들기 전에 차단
+                .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(jwtAuthFilter,   UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 
@@ -73,7 +99,7 @@ public class SecurityConfig {
         cfg.setAllowedOriginPatterns(List.of("*"));
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
-        cfg.setAllowCredentials(true);
+        cfg.setAllowCredentials(true);   // 쿠키/credentials 동반 요청 허용
         var source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", cfg);
         return source;

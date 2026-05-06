@@ -21,6 +21,17 @@ spring:
       enabled: true
       max-file-size: 50MB
       max-request-size: 55MB
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+# 다중 인스턴스 STOMP 브로드캐스트 (Redis Pub/Sub).
+# dev 기본값은 false 라 단일 인스턴스로만 동작 — Redis 안 띄워도 문제없음.
+# 다중 인스턴스 테스트 시: MESSENGER_REDIS_ENABLED=true 환경변수로 켜고 Redis 실행.
+messenger:
+  redis:
+    enabled: ${MESSENGER_REDIS_ENABLED:false}
 
 mybatis:
   mapper-locations: classpath:mapper/**/*.xml

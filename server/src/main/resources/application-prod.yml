@@ -11,6 +11,15 @@ spring:
       maximum-pool-size: ${DB_POOL_MAX:20}
   thymeleaf:
     cache: true                 # 운영은 템플릿 캐시 켜기
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+# 운영 기본은 다중 인스턴스 가정 → Redis 활성화. 환경변수로 강제 비활성화 가능.
+messenger:
+  redis:
+    enabled: ${MESSENGER_REDIS_ENABLED:true}
 
 server:
   port: ${SERVER_PORT:8080}

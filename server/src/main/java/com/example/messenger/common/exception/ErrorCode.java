@@ -16,6 +16,7 @@ public enum ErrorCode {
 
     // Validation / common
     BAD_REQUEST         (HttpStatus.BAD_REQUEST,  "COMMON_001", "잘못된 요청입니다."),
+    RATE_LIMITED        (HttpStatus.TOO_MANY_REQUESTS, "COMMON_002", "요청이 너무 잦습니다. 잠시 후 다시 시도하세요."),
     INTERNAL_ERROR      (HttpStatus.INTERNAL_SERVER_ERROR, "COMMON_999", "서버 오류가 발생했습니다.");
 
     private final HttpStatus status;

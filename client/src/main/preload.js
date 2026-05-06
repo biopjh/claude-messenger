@@ -20,9 +20,10 @@ contextBridge.exposeInMainWorld('messengerNative', {
     clear: () => ipcRenderer.invoke('token:clear'),
   },
 
-  /** OS 네이티브 알림 */
+  /** 알림 — main 프로세스가 사용자 설정에 따라 OS 알림 / 커스텀 토스트 / 둘 다로 분기 */
   notify: {
     show: (payload) => ipcRenderer.invoke('notify:show', payload),
+    test: ()        => ipcRenderer.invoke('notify:test'),
   },
 
   /** 작업표시줄/도크 unread 배지 + 윈도우 타이틀 */
@@ -51,5 +52,18 @@ contextBridge.exposeInMainWorld('messengerNative', {
     close:    () => ipcRenderer.invoke('update:close'),
     /** 업데이트 상태가 바뀔 때마다 호출. cb(state) */
     onStatus: (cb) => ipcRenderer.on('update:status', (_e, payload) => cb(payload)),
+  },
+
+  /** notify:show 확장 — 토스트 윈도우의 자기 자신 닫기/클릭 콜백 */
+  toast: {
+    click: () => ipcRenderer.invoke('toast:click'),
+    close: () => ipcRenderer.invoke('toast:close'),
+  },
+
+  /** 알림 설정 화면이 사용 */
+  settings: {
+    get:   () => ipcRenderer.invoke('settings:get'),
+    save:  (s) => ipcRenderer.invoke('settings:save', s),
+    close: () => ipcRenderer.invoke('settings:close'),
   },
 });

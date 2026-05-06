@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.messenger.message.mapper.ReactionMapper">
+
+    <resultMap id="ReactionRowMap" type="com.example.messenger.message.dto.ReactionRow">
+        <constructor>
+            <arg column="message_id"     javaType="java.lang.Long"/>
+            <arg column="emoji"          javaType="java.lang.String"/>
+            <arg column="user_id"        javaType="java.lang.Long"/>
+            <arg column="user_nickname"  javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO message_reactions (message_id, user_id, emoji)
+        VALUES (#{messageId}, #{userId}, #{emoji})
+    </insert>
+
+    <delete id="delete">
+        DELETE FROM message_reactions
+         WHERE message_id = #{messageId}
+           AND user_id    = #{userId}
+           AND emoji      = #{emoji}
+    </delete>
+
+    <select id="findRowsByMessageId" resultMap="ReactionRowMap">
+        SELECT mr.message_id  AS message_id,
+               mr.emoji        AS emoji,
+               mr.user_id      AS user_id,
+               u.nickname      AS user_nickname
+          FROM message_reactions mr
+          JOIN users u ON u.id = mr.user_id
+         WHERE mr.message_id = #{messageId}
+         ORDER BY mr.emoji, mr.created_at
+    </select>
+
+    <select id="findRowsByMessageIds" resultMap="ReactionRowMap">
+        SELECT mr.message_id  AS message_id,
+               mr.emoji        AS emoji,
+               mr.user_id      AS user_id,
+               u.nickname      AS user_nickname
+          FROM message_reactions mr
+          JOIN users u ON u.id = mr.user_id
+         WHERE mr.message_id IN
+        <foreach collection="ids" item="id" open="(" close=")" separator=",">
+            #{id}
+        </foreach>
+         ORDER BY mr.message_id, mr.emoji, mr.created_at
+    </select>
+
+</mapper>

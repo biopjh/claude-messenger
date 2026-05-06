@@ -45,6 +45,14 @@ dependencies {
     // WebSocket (이번 단계에서는 의존성만 미리 준비)
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
 
+    // Redis Pub/Sub — 다중 인스턴스 STOMP 메시지 전파용
+    // (messenger.redis.enabled=true 일 때만 RedisConfig 가 활성화됨. dev 기본은 off)
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+    // Rate limiting — 토큰 버킷 알고리즘. 메모리 내 카운터로 동작 (단일 인스턴스 기준).
+    // 다중 인스턴스에서도 IP별 한도가 인스턴스마다 따로 적용되지만 효과적으로 N배 한도가 됨 — 받아들임.
+    implementation 'com.bucket4j:bucket4j-core:8.10.1'
+
     // Lombok
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'

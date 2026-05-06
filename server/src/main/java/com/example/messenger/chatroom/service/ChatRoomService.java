@@ -13,11 +13,11 @@ import com.example.messenger.message.domain.Message;
 import com.example.messenger.message.domain.MessageType;
 import com.example.messenger.message.dto.MessageResponse;
 import com.example.messenger.message.mapper.MessageMapper;
+import com.example.messenger.messaging.MessageBroker;
 import com.example.messenger.user.domain.User;
 import com.example.messenger.user.dto.UserResponse;
 import com.example.messenger.user.service.UserService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,7 +36,7 @@ public class ChatRoomService {
     private final UserService userService;
     private final FriendService friendService;
     private final MessageMapper messageMapper;
-    private final SimpMessagingTemplate broker;
+    private final MessageBroker broker;
 
     /**
      * 두 사용자의 1:1 방을 찾거나 만든다(idempotent).
@@ -212,13 +212,16 @@ public class ChatRoomService {
 
         MessageResponse dto = new MessageResponse(
                 m.getId(), m.getRoomId(), m.getSenderId(),
-                null, null, m.getType(), m.getContent(), m.getCreatedAt(),
-                null, null, null
+                null, null,                          // senderNickname / senderProfileImageUrl
+                m.getType(), m.getContent(), m.getCreatedAt(),
+                null, null, null,                    // attachment*
+                null, null,                          // editedAt / deletedAt
+                null, null, null, null               // replyTo*
         );
-        broker.convertAndSend("/topic/rooms/" + roomId, dto);
+        broker.send("/topic/rooms/" + roomId, dto);
 
         for (Long uid : chatRoomMapper.findMemberUserIds(roomId)) {
-            broker.convertAndSendToUser(
+            broker.sendToUser(
                     uid.toString(),
                     "/queue/notifications",
                     Map.of("kind", "NEW_MESSAGE", "roomId", roomId, "message", dto)

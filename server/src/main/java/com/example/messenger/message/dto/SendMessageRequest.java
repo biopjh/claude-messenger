@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Size;
  *  - type=TEXT 면 content 만 사용, 첨부 필드는 null
  *  - type=IMAGE|FILE 이면 미리 업로드해 받은 url/mime/size 를 첨부 필드로 같이 보낸다.
  *    이때 content 는 화면 표시용 원본 파일명을 권장.
+ *  - replyToMessageId 가 있으면 그 메시지에 답장. 같은 방의 메시지여야 함.
  */
 public record SendMessageRequest(
         @NotNull Long roomId,
@@ -17,5 +18,6 @@ public record SendMessageRequest(
         @NotBlank @Size(max = 4000) String content,
         String attachmentUrl,
         String attachmentMimeType,
-        Long attachmentSizeBytes
+        Long attachmentSizeBytes,
+        Long replyToMessageId
 ) {}

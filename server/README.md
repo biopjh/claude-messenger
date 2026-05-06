@@ -20,6 +20,10 @@
 - WebSocket 실시간 송수신 / 읽음 처리 / 안 읽은 수
 - 파일·이미지 첨부 (드래그앤드롭, 라이트박스)
 - 모든 화면에 동그란 아바타 (이미지 또는 이니셜 폴백)
+- 메시지 답장 / 5분 이내 수정 / 소프트 삭제
+- 이모지 리액션 (👍 ❤️ 😂 😮 😢 🔥)
+- 메시지 본문 부분일치 검색 (pg_trgm)
+- **다중 인스턴스 STOMP 스케일아웃 (Redis Pub/Sub)** — 두 인스턴스 뒤에 있는 사용자도 실시간 메시지 받음
 
 ---
 
@@ -54,7 +58,7 @@ gradle wrapper
 시스템에 Postgres가 없거나 격리된 환경에서 돌리고 싶을 때.
 
 ```bash
-# 빌드 + 기동 (앱 + Postgres)
+# 빌드 + 기동 (앱 + Postgres + Redis)
 docker compose up -d --build
 
 # 로그 보기
@@ -146,6 +150,73 @@ Fly가 부담스러우면 Render. PostgreSQL은 90일 무료 제공.
 
 ---
 
+## 4-B. 다중 인스턴스 스케일아웃 (Redis Pub/Sub) 테스트
+
+서버 한 인스턴스만으로는 STOMP 메시지가 그 인스턴스에 연결된 클라이언트에만 도달합니다.
+**두 인스턴스를 띄우고 둘 다 같은 Redis 를 바라보게 하면**, 인스턴스 A 에서 보낸 메시지가
+인스턴스 B 에 연결된 사용자에게도 실시간으로 전달됩니다.
+
+### 1) Redis 띄우기
+
+가장 쉬운 방법:
+```bash
+brew install redis && brew services start redis
+# 또는
+docker run -d -p 6379:6379 redis:7-alpine
+```
+
+확인:
+```bash
+redis-cli ping   # → PONG
+```
+
+### 2) Spring Boot 두 인스턴스 띄우기 (같은 DB / 같은 Redis 공유)
+
+```bash
+# 터미널 1 — 8080 포트
+cd server
+MESSENGER_REDIS_ENABLED=true ./gradlew bootRun
+
+# 터미널 2 — 8081 포트
+MESSENGER_REDIS_ENABLED=true SERVER_PORT=8081 ./gradlew bootRun
+```
+
+`[MessageBroker] instanceId=...` 로그가 두 줄, 서로 다른 ID 로 찍히면 OK.
+
+### 3) 클라이언트 두 개를 서로 다른 인스턴스에 붙이기
+
+```bash
+# A 사용자 — 8080 인스턴스 사용
+MESSENGER_SERVER_URL=http://localhost:8080 npm --prefix client run start:1
+
+# B 사용자 — 8081 인스턴스 사용
+MESSENGER_SERVER_URL=http://localhost:8081 npm --prefix client run start:2
+```
+
+A 가 B 에게 메시지를 보내면 흐름은:
+```
+A → 인스턴스(8080) → 로컬 broker (A 본인에게 echo)
+                  → Redis Pub/Sub (messenger:broadcast 채널)
+                                 → 인스턴스(8081) 가 수신
+                                 → 인스턴스(8081) 의 로컬 broker
+                                 → B 의 STOMP 세션
+```
+
+자기 자신이 발행한 메시지는 `instanceId` 비교로 echo 차단되어 중복 전달되지 않습니다.
+
+### 4) docker-compose 로 두 인스턴스 띄우기
+
+`server/docker-compose.yml` 에 `app2` 서비스 블록이 주석 처리되어 있습니다.
+주석을 풀고 `docker compose up -d --build` 하면 8080 (app) + 8081 (app2) 동시 실행 + Redis 공유.
+
+### 한계
+
+- HTTP/REST 호출은 인스턴스 간 sticky session 이 필요 (또는 stateless 면 무관). 우리는 stateless JWT 라 무관.
+- WebSocket 핸드셰이크 자체는 한 인스턴스에 고정 — 한 사용자의 STOMP 세션은 한 인스턴스에 머무름. 그 사용자가 보낸 메시지가 같은 방의 다른 인스턴스 사용자에게도 가도록 하는 게 Redis Pub/Sub 의 역할.
+- Pub/Sub 은 메시지 영속성이 없음(브로커 재시작 시 미전달 메시지 유실). 하지만 우리 메시지는 Postgres 에 영속화되므로 클라이언트가 재접속하면 history 로 복구 가능.
+
+---
+
 ## 5. 운영 환경 변수 한눈에 보기
 
 | 변수 | 필수 | 설명 |
@@ -160,6 +231,9 @@ Fly가 부담스러우면 Render. PostgreSQL은 90일 무료 제공.
 | `FILE_UPLOAD_DIR` | ❌ | 업로드 저장 경로. 기본 `/app/var/uploads` |
 | `SERVER_PORT` | ❌ | 기본 8080 |
 | `DB_POOL_MAX` | ❌ | HikariCP 최대 풀 크기. 기본 20 |
+| `MESSENGER_REDIS_ENABLED` | ❌ | Redis Pub/Sub 사용 여부. dev 기본 false, prod 기본 true |
+| `SPRING_DATA_REDIS_HOST` | prod ✅ | Redis 호스트. 기본 localhost |
+| `SPRING_DATA_REDIS_PORT` | ❌ | 기본 6379 |
 
 ---
 

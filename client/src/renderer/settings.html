@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>알림 설정 · Messenger</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "맑은 고딕", "Malgun Gothic", sans-serif;
+      background: #f3f4f6; color: #111827; }
+    body { display: flex; flex-direction: column; }
+    main { flex: 1; padding: 24px 28px; overflow-y: auto; }
+    h1 { font-size: 18px; margin: 0 0 20px; }
+    h2 { font-size: 13px; color: #6b7280; margin: 22px 0 10px; text-transform: uppercase; letter-spacing: .04em; }
+
+    .row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; background: #fff;
+      border: 1px solid #e5e7eb; border-radius: 10px;
+      margin-bottom: 8px;
+    }
+    .row__label { font-size: 14px; }
+    .row__hint  { font-size: 12px; color: #9ca3af; margin-top: 2px; }
+
+    /* iOS 스타일 토글 */
+    .toggle { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle__slider {
+      position: absolute; inset: 0;
+      background: #d1d5db; border-radius: 999px; cursor: pointer;
+      transition: background 160ms;
+    }
+    .toggle__slider::before {
+      content: ''; position: absolute; left: 2px; top: 2px;
+      width: 20px; height: 20px; background: #fff; border-radius: 50%;
+      transition: transform 160ms;
+      box-shadow: 0 2px 4px rgba(0,0,0,.15);
+    }
+    .toggle input:checked + .toggle__slider { background: #2563eb; }
+    .toggle input:checked + .toggle__slider::before { transform: translateX(20px); }
+
+    /* 라디오 */
+    .radio-group { display: flex; flex-direction: column; gap: 6px; }
+    .radio-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; background: #fff;
+      border: 1px solid #e5e7eb; border-radius: 10px;
+      cursor: pointer;
+    }
+    .radio-row input { width: 16px; height: 16px; }
+    .radio-row.is-active { border-color: #2563eb; background: #eff6ff; }
+
+    /* 숫자 */
+    .number-input {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+      padding: 4px 8px;
+    }
+    .number-input button {
+      width: 24px; height: 24px; border: 0; border-radius: 6px;
+      background: #f3f4f6; cursor: pointer; font-size: 14px;
+    }
+    .number-input input {
+      width: 50px; border: 0; text-align: center; font-size: 14px;
+      background: transparent; outline: none;
+    }
+
+    /* footer */
+    footer {
+      padding: 12px 16px;
+      background: #fff; border-top: 1px solid #e5e7eb;
+      display: flex; justify-content: flex-end; gap: 8px;
+      align-items: center;
+    }
+    footer button {
+      padding: 8px 16px; border: 0; border-radius: 8px;
+      font-size: 13px; cursor: pointer; font-weight: 500;
+    }
+    .btn-ghost  { background: #f3f4f6; color: #374151; }
+    .btn-test   { background: #fef3c7; color: #92400e; }
+    .btn-primary{ background: #2563eb; color: #fff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .toast-msg { font-size: 12px; color: #10b981; margin-right: auto; }
+    .toast-msg.error { color: #dc2626; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>알림 설정</h1>
+
+    <div class="row">
+      <div>
+        <div class="row__label">새 메시지 알림</div>
+        <div class="row__hint">앱이 백그라운드일 때만 알림이 표시됩니다</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="enabled">
+        <span class="toggle__slider"></span>
+      </label>
+    </div>
+
+    <h2>알림 방식</h2>
+    <div class="radio-group" id="styleGroup">
+      <label class="radio-row" data-value="os">
+        <input type="radio" name="style" value="os">
+        <div>
+          <div class="row__label">OS 네이티브 알림</div>
+          <div class="row__hint">Windows 토스트 / macOS 알림 센터를 사용 (시스템 설정 영향 받음)</div>
+        </div>
+      </label>
+      <label class="radio-row" data-value="toast">
+        <input type="radio" name="style" value="toast">
+        <div>
+          <div class="row__label">앱 내장 토스트</div>
+          <div class="row__hint">트레이 근처에 직접 띄우는 작은 팝업 — 시스템 설정에 영향받지 않음</div>
+        </div>
+      </label>
+      <label class="radio-row" data-value="both">
+        <input type="radio" name="style" value="both">
+        <div>
+          <div class="row__label">둘 다</div>
+          <div class="row__hint">기본값 — OS 알림 + 앱 토스트 동시 표시</div>
+        </div>
+      </label>
+    </div>
+
+    <h2>토스트 옵션</h2>
+    <div class="row">
+      <div>
+        <div class="row__label">자동 닫기 시간</div>
+        <div class="row__hint">2~30초 사이</div>
+      </div>
+      <div class="number-input">
+        <button id="dec" type="button">−</button>
+        <input id="duration" type="number" min="2" max="30">
+        <button id="inc" type="button">+</button>
+        <span style="font-size:12px;color:#6b7280;">초</span>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <div class="row__label">알림 소리</div>
+        <div class="row__hint">OS 네이티브 알림에만 적용</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="sound">
+        <span class="toggle__slider"></span>
+      </label>
+    </div>
+  </main>
+
+  <footer>
+    <span class="toast-msg" id="msg"></span>
+    <button class="btn-test" id="testBtn" type="button">테스트 알림</button>
+    <button class="btn-ghost" id="closeBtn" type="button">닫기</button>
+    <button class="btn-primary" id="saveBtn" type="button">저장</button>
+  </footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function applySettings(s) {
+      $('enabled').checked = !!s.enabled;
+      $('sound').checked   = !!s.sound;
+      $('duration').value  = Math.max(2, Math.min(30, Math.round((s.toastDurationMs || 5000) / 1000)));
+      const style = s.style || 'both';
+      document.querySelectorAll('input[name=style]').forEach(r => r.checked = (r.value === style));
+      document.querySelectorAll('#styleGroup .radio-row').forEach(row => {
+        row.classList.toggle('is-active', row.dataset.value === style);
+      });
+    }
+
+    function readSettings() {
+      const styleEl = document.querySelector('input[name=style]:checked');
+      return {
+        enabled: $('enabled').checked,
+        style:   styleEl ? styleEl.value : 'both',
+        sound:   $('sound').checked,
+        toastDurationMs: Math.max(2, Math.min(30, Number($('duration').value) || 5)) * 1000,
+      };
+    }
+
+    document.querySelectorAll('input[name=style]').forEach(r => {
+      r.addEventListener('change', () => {
+        document.querySelectorAll('#styleGroup .radio-row').forEach(row => {
+          row.classList.toggle('is-active', row.dataset.value === r.value);
+        });
+      });
+    });
+
+    $('inc').addEventListener('click', () => {
+      $('duration').value = Math.min(30, (Number($('duration').value) || 5) + 1);
+    });
+    $('dec').addEventListener('click', () => {
+      $('duration').value = Math.max(2, (Number($('duration').value) || 5) - 1);
+    });
+
+    $('saveBtn').addEventListener('click', async () => {
+      try {
+        await window.messengerNative.settings.save(readSettings());
+        flash('저장되었습니다', false);
+      } catch (e) {
+        flash(e?.message || '저장 실패', true);
+      }
+    });
+    $('testBtn').addEventListener('click', async () => {
+      // 저장 안 했어도 현재 폼 값으로 임시 테스트
+      try {
+        await window.messengerNative.settings.save(readSettings());
+        await window.messengerNative.notify.test();
+      } catch (e) { flash(e?.message || '테스트 실패', true); }
+    });
+    $('closeBtn').addEventListener('click', () => window.messengerNative.settings.close());
+
+    function flash(text, isError) {
+      const m = $('msg');
+      m.textContent = text;
+      m.className = 'toast-msg' + (isError ? ' error' : '');
+      setTimeout(() => { m.textContent = ''; }, 1800);
+    }
+
+    (async function init() {
+      try {
+        const s = await window.messengerNative.settings.get();
+        applySettings(s);
+      } catch (e) {
+        applySettings({ enabled: true, style: 'both', sound: true, toastDurationMs: 5000 });
+      }
+    })();
+  </script>
+</body>
+</html>

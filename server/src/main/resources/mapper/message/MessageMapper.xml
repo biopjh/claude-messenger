@@ -3,6 +3,7 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.example.messenger.message.mapper.MessageMapper">
 
+    <!-- ========= 화면용 DTO ResultMap (17 fields) ========= -->
     <resultMap id="MessageResponseMap" type="com.example.messenger.message.dto.MessageResponse">
         <constructor>
             <idArg  column="id"                          javaType="java.lang.Long"/>
@@ -13,25 +14,36 @@
             <arg    column="type"                        javaType="com.example.messenger.message.domain.MessageType"/>
             <arg    column="content"                     javaType="java.lang.String"/>
             <arg    column="created_at"                  javaType="java.time.OffsetDateTime"/>
+
             <arg    column="attachment_url"              javaType="java.lang.String"/>
             <arg    column="attachment_mime_type"        javaType="java.lang.String"/>
             <arg    column="attachment_size_bytes"       javaType="java.lang.Long"/>
+
+            <arg    column="edited_at"                   javaType="java.time.OffsetDateTime"/>
+            <arg    column="deleted_at"                  javaType="java.time.OffsetDateTime"/>
+
+            <arg    column="reply_to_message_id"         javaType="java.lang.Long"/>
+            <arg    column="reply_to_sender_nickname"    javaType="java.lang.String"/>
+            <arg    column="reply_to_content"            javaType="java.lang.String"/>
+            <arg    column="reply_to_type"               javaType="com.example.messenger.message.domain.MessageType"/>
         </constructor>
     </resultMap>
 
-    <insert id="insert"
-            parameterType="com.example.messenger.message.domain.Message"
-            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
-        INSERT INTO messages (room_id, sender_id, type, content)
-        VALUES (#{roomId}, #{senderId}, #{type}, #{content})
-    </insert>
+    <!-- ========= 도메인 ResultMap (Message) — 권한 검증용 ========= -->
+    <resultMap id="MessageDomainMap" type="com.example.messenger.message.domain.Message">
+        <id     property="id"                column="id"/>
+        <result property="roomId"            column="room_id"/>
+        <result property="senderId"          column="sender_id"/>
+        <result property="type"              column="type"/>
+        <result property="content"           column="content"/>
+        <result property="createdAt"         column="created_at"/>
+        <result property="editedAt"          column="edited_at"/>
+        <result property="deletedAt"         column="deleted_at"/>
+        <result property="replyToMessageId"  column="reply_to_message_id"/>
+    </resultMap>
 
-    <insert id="insertAttachment">
-        INSERT INTO attachments (message_id, url, mime_type, size_bytes)
-        VALUES (#{messageId}, #{url}, #{mimeType}, #{sizeBytes})
-    </insert>
-
-    <select id="findPage" resultMap="MessageResponseMap">
+    <!-- ========= 공통 SELECT 컬럼 + JOIN ========= -->
+    <sql id="messageResponseSelect">
         SELECT m.id                  AS id,
                m.room_id             AS room_id,
                m.sender_id           AS sender_id,
@@ -42,14 +54,80 @@
                m.created_at          AS created_at,
                a.url                 AS attachment_url,
                a.mime_type           AS attachment_mime_type,
-               a.size_bytes          AS attachment_size_bytes
+               a.size_bytes          AS attachment_size_bytes,
+               m.edited_at           AS edited_at,
+               m.deleted_at          AS deleted_at,
+               m.reply_to_message_id AS reply_to_message_id,
+               replyU.nickname       AS reply_to_sender_nickname,
+               -- 답장 대상이 삭제됐으면 content/type 을 NULL 로 → 프런트가 "삭제된 메시지" 처리
+               CASE WHEN reply.deleted_at IS NOT NULL THEN NULL
+                    ELSE LEFT(reply.content, 80) END    AS reply_to_content,
+               CASE WHEN reply.deleted_at IS NOT NULL THEN NULL
+                    ELSE reply.type END                 AS reply_to_type
           FROM messages m
-          LEFT JOIN users u       ON u.id = m.sender_id
-          LEFT JOIN attachments a ON a.message_id = m.id
+          LEFT JOIN users u           ON u.id = m.sender_id
+          LEFT JOIN attachments a     ON a.message_id = m.id
+          LEFT JOIN messages reply    ON reply.id = m.reply_to_message_id
+          LEFT JOIN users replyU      ON replyU.id = reply.sender_id
+    </sql>
+
+    <!-- ========= INSERT / UPDATE ========= -->
+
+    <insert id="insert"
+            parameterType="com.example.messenger.message.domain.Message"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO messages (room_id, sender_id, type, content, reply_to_message_id)
+        VALUES (#{roomId}, #{senderId}, #{type}, #{content}, #{replyToMessageId})
+    </insert>
+
+    <insert id="insertAttachment">
+        INSERT INTO attachments (message_id, url, mime_type, size_bytes)
+        VALUES (#{messageId}, #{url}, #{mimeType}, #{sizeBytes})
+    </insert>
+
+    <update id="updateContent">
+        UPDATE messages
+           SET content = #{content},
+               edited_at = #{editedAt}
+         WHERE id = #{id}
+    </update>
+
+    <update id="softDelete">
+        UPDATE messages
+           SET deleted_at = #{deletedAt}
+         WHERE id = #{id}
+    </update>
+
+    <!-- ========= SELECT ========= -->
+
+    <select id="findById" resultMap="MessageDomainMap">
+        SELECT id, room_id, sender_id, type, content, created_at,
+               edited_at, deleted_at, reply_to_message_id
+          FROM messages WHERE id = #{id}
+    </select>
+
+    <select id="findResponseById" resultMap="MessageResponseMap">
+        <include refid="messageResponseSelect"/>
+        WHERE m.id = #{id}
+    </select>
+
+    <select id="findPage" resultMap="MessageResponseMap">
+        <include refid="messageResponseSelect"/>
          WHERE m.room_id = #{roomId}
            <if test="cursorId != null">
                AND m.id <![CDATA[ < ]]> #{cursorId}
            </if>
+         ORDER BY m.id DESC
+         LIMIT #{size}
+    </select>
+
+    <!-- 본문 부분일치 검색. pg_trgm GIN 인덱스가 ILIKE '%...%' 를 처리해줘서 큰 방에서도 빠름. -->
+    <select id="searchInRoom" resultMap="MessageResponseMap">
+        <include refid="messageResponseSelect"/>
+         WHERE m.room_id     = #{roomId}
+           AND m.deleted_at IS NULL
+           AND m.type        IN ('TEXT', 'IMAGE', 'FILE')
+           AND m.content     ILIKE '%' || #{query} || '%'
          ORDER BY m.id DESC
          LIMIT #{size}
     </select>

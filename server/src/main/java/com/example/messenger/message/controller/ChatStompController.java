@@ -6,14 +6,12 @@ import com.example.messenger.message.domain.Message;
 import com.example.messenger.message.dto.MessageResponse;
 import com.example.messenger.message.dto.SendMessageRequest;
 import com.example.messenger.message.service.MessageService;
-import com.example.messenger.user.domain.User;
-import com.example.messenger.user.service.UserService;
+import com.example.messenger.messaging.MessageBroker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 import java.util.Map;
@@ -32,8 +30,7 @@ public class ChatStompController {
 
     private final MessageService messageService;
     private final ChatRoomService chatRoomService;
-    private final UserService userService;
-    private final SimpMessagingTemplate broker;
+    private final MessageBroker broker;
 
     @MessageMapping("/chat.send")
     public void send(@Payload SendMessageRequest req, SimpMessageHeaderAccessor headers) {
@@ -43,27 +40,23 @@ public class ChatStompController {
             return;
         }
 
-        // 1) DB 저장 (서비스가 멤버 검사 + 첨부 insert도 수행)
+        // 1) DB 저장 (서비스가 멤버/첨부/답장대상 검증, 첨부 insert 도 수행)
         Message saved = messageService.save(
                 req.roomId(), senderId,
                 req.type(), req.content(),
-                req.attachmentUrl(), req.attachmentMimeType(), req.attachmentSizeBytes());
+                req.attachmentUrl(), req.attachmentMimeType(), req.attachmentSizeBytes(),
+                req.replyToMessageId());
 
-        // 2) 보낸 사람 정보 채워서 응답 DTO 구성
-        User sender = userService.getById(senderId);
-        MessageResponse dto = new MessageResponse(
-                saved.getId(), saved.getRoomId(), saved.getSenderId(),
-                sender.getNickname(), sender.getProfileImageUrl(),
-                saved.getType(), saved.getContent(), saved.getCreatedAt(),
-                req.attachmentUrl(), req.attachmentMimeType(), req.attachmentSizeBytes());
+        // 2) 답장 정보 포함된 응답 DTO 는 mapper 가 LEFT JOIN 으로 채워주므로 그걸 가져온다.
+        MessageResponse dto = messageService.getResponseById(saved.getId());
 
         // 3) 같은 방 토픽으로 브로드캐스트
-        broker.convertAndSend("/topic/rooms/" + req.roomId(), dto);
+        broker.send("/topic/rooms/" + req.roomId(), dto);
 
         // 4) 방의 다른 멤버들에게 개인 큐 알림 (목록 갱신용)
         for (Long uid : chatRoomService.findMemberUserIds(req.roomId())) {
             if (uid.equals(senderId)) continue;
-            broker.convertAndSendToUser(
+            broker.sendToUser(
                     uid.toString(),
                     "/queue/notifications",
                     Map.of(
@@ -89,7 +82,7 @@ public class ChatStompController {
         // 같은 방 다른 멤버에게 ‘읽음 위치’ 갱신을 알림 (선택적 — 화면에 1 표시 사라짐 등에 활용)
         for (Long uid : chatRoomService.findMemberUserIds(roomId)) {
             if (uid.equals(userId)) continue;
-            broker.convertAndSendToUser(
+            broker.sendToUser(
                     uid.toString(),
                     "/queue/notifications",
                     Map.of(

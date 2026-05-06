@@ -17,6 +17,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const log = require('electron-log/main');
 const { autoUpdater } = require('electron-updater');
+const toastMgr = require('./toast');
 
 // 파일 로그 (운영 시 ~/Library/Logs/Messenger/main.log 등에 기록 — 업데이트 디버깅에 필수)
 log.transports.file.level = 'info';
@@ -27,11 +28,20 @@ autoUpdater.autoInstallOnAppQuit = true;
 
 // ─────────────────────────────── 상수 ───────────────────────────────
 
-const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'tray.png');
-const SETUP_HTML = path.join(__dirname, '..', 'renderer', 'setup.html');
+const ICON_PATH    = path.join(__dirname, '..', '..', 'assets', 'tray.png');
+const SETUP_HTML   = path.join(__dirname, '..', 'renderer', 'setup.html');
+const SETTINGS_HTML = path.join(__dirname, '..', 'renderer', 'settings.html');
 const userDataDir = () => app.getPath('userData');
 const CONFIG_FILE = () => path.join(userDataDir(), 'config.json');
 const TOKEN_FILE = () => path.join(userDataDir(), 'tokens.dat');
+
+/** 알림 설정 기본값. 사용자가 settings 화면에서 바꾸기 전까지 이 값. */
+const DEFAULT_NOTIFICATION_SETTINGS = Object.freeze({
+  enabled: true,
+  style: 'both',          // 'os' | 'toast' | 'both'
+  sound: true,
+  toastDurationMs: 5000,
+});
 
 const WANTS_DEVTOOLS =
   process.argv.includes('--devtools') || process.env.MESSENGER_DEVTOOLS === '1';
@@ -67,6 +77,9 @@ let isQuitting = false;
 
 let serverUrl = null;             // 현재 사용 중인 서버 URL (env > config 파일)
 let cachedTokens = { access: null, refresh: null };
+let notificationSettings = { ...DEFAULT_NOTIFICATION_SETTINGS };
+/** @type {BrowserWindow | null} */
+let settingsWindow = null;
 
 // ─────────────────────── 설정 파일 (serverUrl) ──────────────────────
 
@@ -84,6 +97,25 @@ function saveConfig(c) {
   } catch (e) {
     console.error('saveConfig failed', e);
   }
+}
+
+/** 현재 메모리 상태(serverUrl + notificationSettings) 를 통째로 디스크에 보관. */
+function persistConfig() {
+  saveConfig({
+    serverUrl: serverUrl || null,
+    notifications: { ...notificationSettings },
+  });
+}
+
+/** 외부 입력으로 들어온 설정을 안전한 범위로 정규화. */
+function sanitizeSettings(s) {
+  const styles = ['os', 'toast', 'both'];
+  return {
+    enabled: !!s.enabled,
+    style: styles.includes(s.style) ? s.style : 'both',
+    sound: !!s.sound,
+    toastDurationMs: Math.max(2000, Math.min(30000, Math.floor(Number(s.toastDurationMs) || 5000))),
+  };
 }
 
 // ─────────────────────── 토큰 안전 저장 ─────────────────────────────
@@ -227,6 +259,79 @@ async function promptChangeServerUrl() {
   showMainWindow();
 }
 
+// ───────────────────────── 알림 디스패치 ─────────────────────────────
+
+function showOsNotification({ title, body, sound }) {
+  if (!Notification.isSupported()) return false;
+  const n = new Notification({
+    title: String(title || 'Messenger'),
+    body:  String(body  || ''),
+    icon:  ICON_PATH,
+    silent: !sound,
+  });
+  n.on('click', () => showMainWindow());
+  n.show();
+  return true;
+}
+
+/** 알림 한 건을 사용자 설정에 따라 OS / 토스트 / 둘 다 / 안 함 으로 분기. */
+function dispatchNotification({ title, body, roomId }) {
+  const s = notificationSettings;
+  if (!s.enabled) return false;
+
+  if (s.style === 'os' || s.style === 'both') {
+    showOsNotification({ title, body, sound: s.sound });
+  }
+  if (s.style === 'toast' || s.style === 'both') {
+    toastMgr.showToast(
+      { title, body, roomId, durationMs: s.toastDurationMs },
+      {
+        iconPath: ICON_PATH,
+        onClick: (clickedRoomId) => {
+          showMainWindow();
+          if (clickedRoomId && mainWindow && serverUrl) {
+            const target = `${serverUrl.replace(/\/+$/, '')}/rooms/${clickedRoomId}`;
+            mainWindow.loadURL(target).catch(() => {});
+          }
+        },
+      }
+    );
+  }
+  return true;
+}
+
+// ───────────────────────── 설정 윈도우 ─────────────────────────────
+
+function openSettingsWindow() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.show();
+    settingsWindow.focus();
+    return;
+  }
+  settingsWindow = new BrowserWindow({
+    width: 540,
+    height: 660,
+    parent: mainWindow || undefined,
+    modal: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    title: '알림 설정',
+    autoHideMenuBar: true,
+    backgroundColor: '#f3f4f6',
+    icon: ICON_PATH,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+  settingsWindow.loadFile(SETTINGS_HTML).catch((e) => log.error('settings loadFile', e));
+  settingsWindow.on('closed', () => { settingsWindow = null; });
+}
+
 // ───────────────────────── IPC 핸들러 ───────────────────────────────
 
 function registerIpc() {
@@ -243,22 +348,37 @@ function registerIpc() {
     return true;
   });
 
-  // ── 알림
-  ipcMain.handle('notify:show', async (_e, { title, body }) => {
-    const supported = Notification.isSupported();
-    console.log('[notify:show]', { title, body, supported });
-    if (!supported) return false;
-    const n = new Notification({
-      title: String(title || 'Messenger'),
-      body:  String(body  || ''),
-      icon:  ICON_PATH,
-      silent: false,
+  // ── 알림 (설정에 따라 OS 네이티브 / 커스텀 토스트 / 둘 다 분기)
+  ipcMain.handle('notify:show', async (_e, payload) => {
+    return dispatchNotification(payload);
+  });
+  ipcMain.handle('notify:test', async () => {
+    return dispatchNotification({
+      title: 'Messenger 테스트',
+      body:  '이 알림이 보이면 설정이 정상입니다.',
+      roomId: null,
     });
-    n.on('show',   () => console.log('[notify:show] displayed'));
-    n.on('failed', (e, err) => console.error('[notify:show] failed:', err));
-    n.on('click',  () => showMainWindow());
-    n.show();
-    return true;
+  });
+
+  // ── 토스트가 자기 자신을 닫거나 클릭됐을 때
+  ipcMain.handle('toast:close', (e) => {
+    toastMgr.dispatchClose(BrowserWindow.fromWebContents(e.sender));
+  });
+  ipcMain.handle('toast:click', async (e) => {
+    const senderWin = BrowserWindow.fromWebContents(e.sender);
+    toastMgr.dispatchClick(senderWin);   // 내부에서 onClick 호출
+  });
+
+  // ── 설정 (알림)
+  ipcMain.handle('settings:get', async () => ({ ...notificationSettings }));
+  ipcMain.handle('settings:save', async (_e, partial) => {
+    notificationSettings = sanitizeSettings({ ...notificationSettings, ...(partial || {}) });
+    persistConfig();
+    return { ...notificationSettings };
+  });
+  ipcMain.handle('settings:close', async (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    if (win && !win.isDestroyed()) win.close();
   });
 
   // ── 배지 (작업표시줄/도크 unread 카운트)
@@ -281,7 +401,7 @@ function registerIpc() {
       throw new Error('http:// 또는 https:// 로 시작하는 URL을 입력하세요.');
     }
     serverUrl = trimmed;
-    saveConfig({ serverUrl });
+    persistConfig();
     loadServerOrSetup();
     return serverUrl;
   });
@@ -338,6 +458,7 @@ function buildAppMenu() {
     {
       label: '설정',
       submenu: [
+        { label: '알림 설정…',     click: openSettingsWindow },
         { label: '서버 URL 변경…', click: promptChangeServerUrl },
         { label: '테스트 알림 보내기',
           click: () => {
@@ -575,6 +696,7 @@ app.whenReady().then(() => {
   serverUrl = process.env.MESSENGER_SERVER_URL
               || cfg.serverUrl
               || null;
+  notificationSettings = sanitizeSettings({ ...DEFAULT_NOTIFICATION_SETTINGS, ...(cfg.notifications || {}) });
   cachedTokens = loadTokensFromDisk();
 
   // 2) IPC 등록
@@ -600,4 +722,7 @@ app.on('activate', () => {
   else showMainWindow();
 });
 
-app.on('before-quit', () => { isQuitting = true; });
+app.on('before-quit', () => {
+  isQuitting = true;
+  toastMgr.closeAll();
+});

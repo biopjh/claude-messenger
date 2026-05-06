@@ -14,10 +14,26 @@
       <span id="roomMemberCount" class="muted small"></span>
     </div>
     <span id="connState" class="conn-state">연결 중…</span>
+    <button id="searchBtn"   class="icon-btn" type="button" title="이 방에서 검색" aria-label="검색">🔍</button>
     <button id="membersBtn"  class="icon-btn" type="button" title="멤버" aria-label="멤버">👥</button>
     <button id="inviteBtn"   class="icon-btn hidden" type="button" title="초대">＋</button>
     <button id="leaveBtn"    class="icon-btn hidden" type="button" title="나가기">⎋</button>
   </header>
+
+  <!-- 검색 패널 (drawer 형태로 우측에서 슬라이드) -->
+  <aside id="searchPanel" class="drawer search-panel hidden">
+    <div class="drawer__backdrop" data-close-search></div>
+    <div class="drawer__panel">
+      <header class="drawer__head search-panel__head">
+        <h3>이 방에서 검색</h3>
+        <button class="icon-btn" data-close-search aria-label="닫기">×</button>
+      </header>
+      <div class="search-panel__input-wrap">
+        <input id="searchInput" type="text" placeholder="검색어 입력 (예: 회의록)" autocomplete="off">
+      </div>
+      <div id="searchResults" class="search-panel__results"></div>
+    </div>
+  </aside>
 
   <section id="messages" class="messages"></section>
 

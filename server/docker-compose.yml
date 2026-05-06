@@ -1,5 +1,5 @@
-# 로컬에서 docker compose up -d 한 번이면 앱 + Postgres 가 함께 뜬다.
-# (개발자 PC 의 PostgreSQL 과 충돌하지 않도록 5433 으로 노출)
+# 로컬에서 docker compose up -d 한 번이면 앱 + Postgres + Redis 가 함께 뜬다.
+# (개발자 PC 의 PostgreSQL 과 충돌하지 않도록 5433, Redis 도 6380 으로 노출)
 
 services:
   postgres:
@@ -18,16 +18,31 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   app:
     build: .
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/messenger
       SPRING_DATASOURCE_USERNAME: messenger
       SPRING_DATASOURCE_PASSWORD: messenger
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      MESSENGER_REDIS_ENABLED: "true"
       JWT_SECRET: change-me-please-change-me-please-change-me-32+chars
       FILE_UPLOAD_DIR: /app/var/uploads
       SERVER_PORT: 8080
@@ -35,6 +50,36 @@ services:
       - "8080:8080"
     volumes:
       - uploads:/app/var/uploads
+
+  # 두 번째 app 인스턴스 — Redis Pub/Sub 동작 확인용.
+  # docker compose up -d --scale 안 쓰는 이유: 같은 컴포즈 안의 두 서비스에 다른 포트를 매핑해
+  # 호스트에서 명시적으로 두 URL 로 접속 가능하게 만든다.
+  #
+  # 사용 시: 이 블록 주석을 풀고 `docker compose up -d` 다시.
+  #         8080 → 인스턴스 A, 8081 → 인스턴스 B. 두 인스턴스가 같은 Redis 로 메시지 전파.
+  #
+  # app2:
+  #   build: .
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   environment:
+  #     SPRING_PROFILES_ACTIVE: prod
+  #     SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/messenger
+  #     SPRING_DATASOURCE_USERNAME: messenger
+  #     SPRING_DATASOURCE_PASSWORD: messenger
+  #     SPRING_DATA_REDIS_HOST: redis
+  #     SPRING_DATA_REDIS_PORT: "6379"
+  #     MESSENGER_REDIS_ENABLED: "true"
+  #     JWT_SECRET: change-me-please-change-me-please-change-me-32+chars
+  #     FILE_UPLOAD_DIR: /app/var/uploads
+  #     SERVER_PORT: 8080
+  #   ports:
+  #     - "8081:8080"
+  #   volumes:
+  #     - uploads:/app/var/uploads
 
 volumes:
   pgdata:
