@@ -92,3 +92,23 @@ jobs:
           # GITHUB_TOKEN 은 actions 가 자동으로 주입. electron-builder 가 이걸 GH_TOKEN 으로 쓴다.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --${{ matrix.platform }} --config ../installer/electron-builder.yml --publish always
+
+  # 매트릭스 빌드 3개가 모두 성공하면 draft 로 만들어진 release 를 정식 publish 로 전환.
+  # (electron-builder 는 매트릭스 환경에서 누가 마지막인지 모르므로 항상 draft 로 둠)
+  publish:
+    needs: release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')   # 태그로 트리거된 경우에만
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "Promoting draft → published: $TAG"
+          gh release edit "$TAG" \
+            --repo "${{ github.repository }}" \
+            --draft=false \
+            --latest
